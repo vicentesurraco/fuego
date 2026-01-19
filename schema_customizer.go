@@ -13,6 +13,13 @@ import (
 	"github.com/getkin/kin-openapi/openapi3"
 )
 
+// EnumValuer is implemented by types that want to expose their enum values for OpenAPI.
+// Types implementing this interface will automatically have their enum values included
+// in the generated OpenAPI schema.
+type EnumValuer interface {
+	EnumValues() []any
+}
+
 // parseValidate parses the values of the validate tag
 // It adds the following struct tags (tag => OpenAPI schema field):
 // - validate:
@@ -174,6 +181,9 @@ func parseEnum(tag reflect.StructTag, schema *openapi3.Schema) {
 //   - max=100 => max=100 (for integers)
 //   - max=100 => maxLength=100 (for strings)
 //   - oneof=A B C => enum: [A, B, C]
+//
+// Additionally, if a type implements EnumValuer, its EnumValues() method will be called
+// to automatically populate the enum values in the schema.
 func SchemaCustomizer(name string, t reflect.Type, tag reflect.StructTag, schema *openapi3.Schema) error {
 	// Example
 	parseExample(tag, schema)
@@ -189,8 +199,32 @@ func SchemaCustomizer(name string, t reflect.Type, tag reflect.StructTag, schema
 		parseEnum(tag, schema)
 	}
 
+	// Check if the type implements EnumValuer (only if enum not already set)
+	if len(schema.Enum) == 0 {
+		parseEnumValuer(t, schema)
+	}
+
 	// After we are done parsing tags, get the required tags
 	determineRequired(t, schema)
 
 	return nil
+}
+
+// parseEnumValuer checks if the type implements EnumValuer and populates enum values.
+func parseEnumValuer(t reflect.Type, schema *openapi3.Schema) {
+	enumType := t
+	if enumType.Kind() == reflect.Ptr {
+		enumType = enumType.Elem()
+	}
+
+	enumValuerType := reflect.TypeOf((*EnumValuer)(nil)).Elem()
+
+	// Check if the type or pointer to type implements EnumValuer
+	if reflect.PointerTo(enumType).Implements(enumValuerType) {
+		instance := reflect.New(enumType).Interface().(EnumValuer)
+		schema.Enum = instance.EnumValues()
+	} else if enumType.Implements(enumValuerType) {
+		instance := reflect.Zero(enumType).Interface().(EnumValuer)
+		schema.Enum = instance.EnumValues()
+	}
 }

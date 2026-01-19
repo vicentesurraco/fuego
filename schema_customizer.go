@@ -20,6 +20,7 @@ import (
 //   - min=1 => minLength=1 (for strings)
 //   - max=100 => max=100 (for integers)
 //   - max=100 => maxLength=100 (for strings)
+//   - oneof=A B C => enum: [A, B, C]
 func parseValidate(tag reflect.StructTag, schema *openapi3.Schema) {
 	validateTag, ok := tag.Lookup("validate")
 	if !ok {
@@ -54,6 +55,15 @@ func parseValidate(tag reflect.StructTag, schema *openapi3.Schema) {
 				//nolint:gosec // disable G115
 				maxPtr := uint64(maxValue)
 				schema.MaxLength = &maxPtr
+			}
+		}
+		// Parse oneof validation tag for enum values
+		if strings.HasPrefix(validateTag, "oneof=") {
+			enumValues := strings.Split(strings.TrimPrefix(validateTag, "oneof="), " ")
+			for _, v := range enumValues {
+				if v != "" {
+					schema.Enum = append(schema.Enum, v)
+				}
 			}
 		}
 	}
@@ -133,11 +143,29 @@ func parseDescription(tag reflect.StructTag, schema *openapi3.Schema) {
 	}
 }
 
+// parseEnum parses the "enum" tag and sets the schema enum values.
+// Format: enum:"VALUE1,VALUE2,VALUE3"
+func parseEnum(tag reflect.StructTag, schema *openapi3.Schema) {
+	enumTag, ok := tag.Lookup("enum")
+	if !ok {
+		return
+	}
+
+	enumValues := strings.Split(enumTag, ",")
+	for _, v := range enumValues {
+		v = strings.TrimSpace(v)
+		if v != "" {
+			schema.Enum = append(schema.Enum, v)
+		}
+	}
+}
+
 // SchemaCustomizer parses struct tags and modifies the schema using kin-openapi3gen's
 // schema customization functionality.
 // It adds the following struct tags (tag => OpenAPI schema field):
 // - description => description
 // - example => example
+// - enum => enum (comma-separated values)
 // - json => nullable (if contains omitempty)
 // - validate:
 //   - required => required
@@ -145,15 +173,21 @@ func parseDescription(tag reflect.StructTag, schema *openapi3.Schema) {
 //   - min=1 => minLength=1 (for strings)
 //   - max=100 => max=100 (for integers)
 //   - max=100 => maxLength=100 (for strings)
+//   - oneof=A B C => enum: [A, B, C]
 func SchemaCustomizer(name string, t reflect.Type, tag reflect.StructTag, schema *openapi3.Schema) error {
 	// Example
 	parseExample(tag, schema)
 
-	// Validation
+	// Validation (includes oneof enum parsing)
 	parseValidate(tag, schema)
 
 	// Description
 	parseDescription(tag, schema)
+
+	// Enum (explicit enum tag, only if not already set by validate oneof)
+	if len(schema.Enum) == 0 {
+		parseEnum(tag, schema)
+	}
 
 	// After we are done parsing tags, get the required tags
 	determineRequired(t, schema)

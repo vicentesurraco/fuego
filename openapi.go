@@ -463,11 +463,62 @@ func dive(openapi *OpenAPI, t reflect.Type, tag SchemaTag, maxDepth int) SchemaT
 		if t.Kind() == reflect.Struct && strings.HasPrefix(tag.Name, "DataOrTemplate") {
 			return dive(openapi, t.Field(0).Type, tag, maxDepth-1)
 		}
+
+		// Check if type implements EnumValuer - if so, register as component schema
+		if isEnumValuer(t) {
+			tag.Ref = "#/components/schemas/" + tag.Name
+			tag.Value = openapi.getOrCreateEnumSchema(tag.Name, t)
+			return tag
+		}
+
 		tag.Ref = "#/components/schemas/" + tag.Name
 		tag.Value = openapi.getOrCreateSchema(tag.Name, reflect.New(t).Interface())
 
 		return tag
 	}
+}
+
+// isEnumValuer checks if a type implements the EnumValuer interface
+func isEnumValuer(t reflect.Type) bool {
+	enumValuerType := reflect.TypeOf((*EnumValuer)(nil)).Elem()
+	return reflect.PointerTo(t).Implements(enumValuerType) || t.Implements(enumValuerType)
+}
+
+// getOrCreateEnumSchema creates a schema for enum types that implement EnumValuer
+func (openAPI *OpenAPI) getOrCreateEnumSchema(key string, t reflect.Type) *openapi3.Schema {
+	schemaRef, ok := openAPI.Description().Components.Schemas[key]
+	if ok {
+		return schemaRef.Value
+	}
+
+	// Create the schema based on the underlying type
+	schema := &openapi3.Schema{
+		Description: key + " enum",
+	}
+
+	// Set the type based on the underlying kind
+	switch t.Kind() {
+	case reflect.String:
+		schema.Type = &openapi3.Types{openapi3.TypeString}
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+		reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		schema.Type = &openapi3.Types{openapi3.TypeInteger}
+	default:
+		schema.Type = &openapi3.Types{openapi3.TypeString}
+	}
+
+	// Get enum values from the EnumValuer interface
+	enumValuerType := reflect.TypeOf((*EnumValuer)(nil)).Elem()
+	if reflect.PointerTo(t).Implements(enumValuerType) {
+		instance := reflect.New(t).Interface().(EnumValuer)
+		schema.Enum = instance.EnumValues()
+	} else if t.Implements(enumValuerType) {
+		instance := reflect.Zero(t).Interface().(EnumValuer)
+		schema.Enum = instance.EnumValues()
+	}
+
+	openAPI.Description().Components.Schemas[key] = &openapi3.SchemaRef{Value: schema}
+	return schema
 }
 
 // getOrCreateSchema is used to get a schema from the OpenAPI spec.

@@ -16,18 +16,21 @@ import (
 
 func NewOpenAPI() *OpenAPI {
 	desc := NewOpenApiSpec()
-	return &OpenAPI{
-		description: &desc,
-		generator: openapi3gen.NewGenerator(
-			openapi3gen.SchemaCustomizer(SchemaCustomizer),
-			openapi3gen.CreateComponentSchemas(openapi3gen.ExportComponentSchemasOptions{
-				ExportComponentSchemas: true,
-				ExportTopLevelSchema:   false,
-			}),
-		),
+	openAPI := &OpenAPI{
+		description:            &desc,
 		globalOpenAPIResponses: []openAPIResponse{},
 		Config:                 defaultOpenAPIConfig,
+		enumRegistry:           make(map[string]string),
 	}
+	// Create generator with schema customizer that has access to enumRegistry
+	openAPI.generator = openapi3gen.NewGenerator(
+		openapi3gen.SchemaCustomizer(openAPI.schemaCustomizerWithEnumRegistry),
+		openapi3gen.CreateComponentSchemas(openapi3gen.ExportComponentSchemasOptions{
+			ExportComponentSchemas: true,
+			ExportTopLevelSchema:   false,
+		}),
+	)
+	return openAPI
 }
 
 // OpenAPI holds the OpenAPI OpenAPIDescription (OAD) and OpenAPI capabilities.
@@ -36,6 +39,8 @@ type OpenAPI struct {
 	generator              *openapi3gen.Generator
 	globalOpenAPIResponses []openAPIResponse
 	Config                 OpenAPIConfig
+	// enumRegistry maps enum value signatures to their type names for post-processing
+	enumRegistry map[string]string
 }
 
 func (openAPI *OpenAPI) Description() *openapi3.T {
@@ -578,4 +583,124 @@ func transformTypeName(s string) string {
 	}
 
 	return prefix + "_" + inside
+}
+
+// schemaCustomizerWithEnumRegistry wraps SchemaCustomizer and registers enum types
+func (openAPI *OpenAPI) schemaCustomizerWithEnumRegistry(name string, t reflect.Type, tag reflect.StructTag, schema *openapi3.Schema) error {
+	// First apply the standard schema customizer
+	if err := SchemaCustomizer(name, t, tag, schema); err != nil {
+		return err
+	}
+
+	// If this is an enum type, register it for later extraction
+	if len(schema.Enum) > 0 && t.Name() != "" {
+		typeName := t.Name()
+		signature := enumSignature(schema.Enum)
+		openAPI.enumRegistry[signature] = typeName
+	}
+
+	return nil
+}
+
+// enumSignature creates a unique signature from enum values for matching
+func enumSignature(values []any) string {
+	strs := make([]string, len(values))
+	for i, v := range values {
+		strs[i] = fmt.Sprintf("%v", v)
+	}
+	slices.Sort(strs)
+	return strings.Join(strs, "|")
+}
+
+// extractEnumSchemas finds inline enum definitions and extracts them to component schemas
+func (openAPI *OpenAPI) extractEnumSchemas() {
+	desc := openAPI.Description()
+
+	// Process all component schemas to find inline enums in properties
+	for _, schemaRef := range desc.Components.Schemas {
+		if schemaRef.Value == nil || schemaRef.Value.Properties == nil {
+			continue
+		}
+		openAPI.processPropertiesForEnums(schemaRef.Value.Properties)
+	}
+}
+
+// processPropertiesForEnums recursively processes schema properties to extract enums
+func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi3.SchemaRef) {
+	for propName, propRef := range properties {
+		if propRef.Value == nil {
+			continue
+		}
+
+		prop := propRef.Value
+
+		// If property has enum values and we have a registered type for it
+		if len(prop.Enum) > 0 {
+			signature := enumSignature(prop.Enum)
+			if typeName, ok := openAPI.enumRegistry[signature]; ok {
+				// Create or get the enum component schema
+				openAPI.ensureEnumComponentSchema(typeName, prop)
+
+				// Replace inline enum with $ref
+				properties[propName] = &openapi3.SchemaRef{
+					Ref: "#/components/schemas/" + typeName,
+				}
+				continue
+			}
+		}
+
+		// Recursively process nested properties
+		if prop.Properties != nil {
+			openAPI.processPropertiesForEnums(prop.Properties)
+		}
+
+		// Process array items
+		if prop.Items != nil && prop.Items.Value != nil {
+			if prop.Items.Value.Properties != nil {
+				openAPI.processPropertiesForEnums(prop.Items.Value.Properties)
+			}
+			// Check if array items are enums
+			if len(prop.Items.Value.Enum) > 0 {
+				signature := enumSignature(prop.Items.Value.Enum)
+				if typeName, ok := openAPI.enumRegistry[signature]; ok {
+					openAPI.ensureEnumComponentSchema(typeName, prop.Items.Value)
+					prop.Items = &openapi3.SchemaRef{
+						Ref: "#/components/schemas/" + typeName,
+					}
+				}
+			}
+		}
+
+		// Process allOf, oneOf, anyOf
+		for _, subSchema := range prop.AllOf {
+			if subSchema.Value != nil && subSchema.Value.Properties != nil {
+				openAPI.processPropertiesForEnums(subSchema.Value.Properties)
+			}
+		}
+		for _, subSchema := range prop.OneOf {
+			if subSchema.Value != nil && subSchema.Value.Properties != nil {
+				openAPI.processPropertiesForEnums(subSchema.Value.Properties)
+			}
+		}
+		for _, subSchema := range prop.AnyOf {
+			if subSchema.Value != nil && subSchema.Value.Properties != nil {
+				openAPI.processPropertiesForEnums(subSchema.Value.Properties)
+			}
+		}
+	}
+}
+
+// ensureEnumComponentSchema creates an enum component schema if it doesn't exist
+func (openAPI *OpenAPI) ensureEnumComponentSchema(name string, sourceSchema *openapi3.Schema) {
+	if _, exists := openAPI.Description().Components.Schemas[name]; exists {
+		return
+	}
+
+	schema := &openapi3.Schema{
+		Type:        sourceSchema.Type,
+		Enum:        sourceSchema.Enum,
+		Description: name + " enum",
+	}
+
+	openAPI.Description().Components.Schemas[name] = &openapi3.SchemaRef{Value: schema}
 }

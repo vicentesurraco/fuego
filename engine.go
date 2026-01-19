@@ -198,6 +198,9 @@ func (e *Engine) SpecHandler() func(c ContextNoBody) (openapi3.T, error) {
 func (e *Engine) OutputOpenAPISpec() *openapi3.T {
 	e.OpenAPI.computeTags()
 
+	// Extract inline enum schemas to component schemas with $ref
+	e.OpenAPI.extractEnumSchemas()
+
 	// Validate
 	err := e.OpenAPI.Description().Validate(context.Background())
 	if err != nil {

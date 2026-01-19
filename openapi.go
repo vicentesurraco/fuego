@@ -17,8 +17,14 @@ import (
 func NewOpenAPI() *OpenAPI {
 	desc := NewOpenApiSpec()
 	return &OpenAPI{
-		description:            &desc,
-		generator:              openapi3gen.NewGenerator(openapi3gen.SchemaCustomizer(SchemaCustomizer)),
+		description: &desc,
+		generator: openapi3gen.NewGenerator(
+			openapi3gen.SchemaCustomizer(SchemaCustomizer),
+			openapi3gen.CreateComponentSchemas(openapi3gen.ExportComponentSchemasOptions{
+				ExportComponentSchemas: true,
+				ExportTopLevelSchema:   false,
+			}),
+		),
 		globalOpenAPIResponses: []openAPIResponse{},
 		Config:                 defaultOpenAPIConfig,
 	}
@@ -49,7 +55,13 @@ func (openAPI *OpenAPI) SetGeneratorSchemaCustomizer(sc openapi3gen.SchemaCustom
 		}
 		return sc(name, t, tag, schema)
 	}
-	openAPI.generator = openapi3gen.NewGenerator(openapi3gen.SchemaCustomizer(customizerFn))
+	openAPI.generator = openapi3gen.NewGenerator(
+		openapi3gen.SchemaCustomizer(customizerFn),
+		openapi3gen.CreateComponentSchemas(openapi3gen.ExportComponentSchemasOptions{
+			ExportComponentSchemas: true,
+			ExportTopLevelSchema:   false,
+		}),
+	)
 }
 
 func (openAPI *OpenAPI) mergeInfo(info *openapi3.Info) {

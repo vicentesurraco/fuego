@@ -465,6 +465,10 @@ func dive(openapi *OpenAPI, t reflect.Type, tag SchemaTag, maxDepth int) SchemaT
 
 	default:
 		tag.Name = transformTypeName(t.Name())
+		// Handle anonymous structs or types with empty names
+		if tag.Name == "" {
+			tag.Name = t.Kind().String()
+		}
 		if t.Kind() == reflect.Struct && strings.HasPrefix(tag.Name, "DataOrTemplate") {
 			return dive(openapi, t.Field(0).Type, tag, maxDepth-1)
 		}

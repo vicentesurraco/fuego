@@ -72,7 +72,6 @@ func parseValidate(tag reflect.StructTag, schema *openapi3.Schema) {
 					schema.Enum = append(schema.Enum, v)
 				}
 			}
-			slog.Info("[ENUM DEBUG] Parsed oneof enum values", "enumValues", schema.Enum)
 		}
 	}
 }
@@ -166,7 +165,6 @@ func parseEnum(tag reflect.StructTag, schema *openapi3.Schema) {
 			schema.Enum = append(schema.Enum, v)
 		}
 	}
-	slog.Info("[ENUM DEBUG] parseEnum found explicit enum tag", "enumValues", schema.Enum)
 }
 
 // SchemaCustomizer parses struct tags and modifies the schema using kin-openapi3gen's
@@ -225,10 +223,8 @@ func parseEnumValuer(t reflect.Type, schema *openapi3.Schema) {
 	if reflect.PointerTo(enumType).Implements(enumValuerType) {
 		instance := reflect.New(enumType).Interface().(EnumValuer)
 		schema.Enum = instance.EnumValues()
-		slog.Info("[ENUM DEBUG] parseEnumValuer found EnumValuer (pointer)", "typeName", enumType.Name(), "enumValues", schema.Enum)
 	} else if enumType.Implements(enumValuerType) {
 		instance := reflect.Zero(enumType).Interface().(EnumValuer)
 		schema.Enum = instance.EnumValues()
-		slog.Info("[ENUM DEBUG] parseEnumValuer found EnumValuer (value)", "typeName", enumType.Name(), "enumValues", schema.Enum)
 	}
 }

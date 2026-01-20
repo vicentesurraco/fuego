@@ -621,7 +621,6 @@ func (openAPI *OpenAPI) schemaCustomizerWithEnumRegistry(name string, t reflect.
 		typeName := t.Name()
 		signature := enumSignature(schema.Enum)
 		openAPI.enumRegistry[signature] = typeName
-		slog.Info("[ENUM DEBUG] Registered enum in registry", "typeName", typeName, "signature", signature, "enumValues", schema.Enum)
 	}
 
 	return nil
@@ -641,17 +640,11 @@ func enumSignature(values []any) string {
 func (openAPI *OpenAPI) extractEnumSchemas() {
 	desc := openAPI.Description()
 
-	slog.Info("[ENUM DEBUG] extractEnumSchemas called", "enumRegistrySize", len(openAPI.enumRegistry), "schemaCount", len(desc.Components.Schemas))
-	for sig, typeName := range openAPI.enumRegistry {
-		slog.Info("[ENUM DEBUG] Registry entry", "signature", sig, "typeName", typeName)
-	}
-
 	// Process all component schemas to find inline enums in properties
-	for schemaName, schemaRef := range desc.Components.Schemas {
+	for _, schemaRef := range desc.Components.Schemas {
 		if schemaRef.Value == nil || schemaRef.Value.Properties == nil {
 			continue
 		}
-		slog.Info("[ENUM DEBUG] Processing schema", "schemaName", schemaName, "propertyCount", len(schemaRef.Value.Properties))
 		openAPI.processPropertiesForEnums(schemaRef.Value.Properties)
 	}
 }
@@ -660,7 +653,6 @@ func (openAPI *OpenAPI) extractEnumSchemas() {
 func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi3.SchemaRef) {
 	for propName, propRef := range properties {
 		if propRef.Value == nil {
-			slog.Info("[ENUM DEBUG] Property has nil value", "propName", propName, "hasRef", propRef.Ref != "")
 			continue
 		}
 
@@ -669,9 +661,7 @@ func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi
 		// If property has enum values and we have a registered type for it
 		if len(prop.Enum) > 0 {
 			signature := enumSignature(prop.Enum)
-			slog.Info("[ENUM DEBUG] Found property with enum", "propName", propName, "enumValues", prop.Enum, "signature", signature)
 			if typeName, ok := openAPI.enumRegistry[signature]; ok {
-				slog.Info("[ENUM DEBUG] Matched enum to registry!", "propName", propName, "typeName", typeName)
 				// Create or get the enum component schema
 				openAPI.ensureEnumComponentSchema(typeName, prop)
 
@@ -680,8 +670,6 @@ func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi
 					Ref: "#/components/schemas/" + typeName,
 				}
 				continue
-			} else {
-				slog.Info("[ENUM DEBUG] No registry match for enum", "propName", propName, "signature", signature)
 			}
 		}
 

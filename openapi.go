@@ -561,7 +561,7 @@ type OpenAPIDescriptioner interface {
 
 // Transform the type name to a more readable & valid OpenAPI 3 format.
 // Useful for generics.
-// Example: "BareSuccessResponse[github.com/go-fuego/fuego/examples/petstore/models.Pets]" -> "BareSuccessResponse_models.Pets"
+// Example: "BareSuccessResponse[github.com/go-fuego/fuego/examples/petstore/models.Pets]" -> "BareSuccessResponse_Pets"
 // Example: "ResultData[[]dtos.StripePaymentMethod]" -> "ResultData_StripePaymentMethodList"
 // Example: "ResultData[*dtos.StripePaymentMethod]" -> "ResultData_StripePaymentMethod"
 func transformTypeName(s string) string {
@@ -589,16 +589,26 @@ func transformTypeName(s string) string {
 	// Handle pointer types - strip leading *
 	inside = strings.TrimPrefix(inside, "*")
 
-	// Extract the package.TypeName portion after the last /
-	lastSlash := strings.LastIndex(inside, "/")
-	if lastSlash != -1 {
-		inside = inside[lastSlash+1:]
-	}
+	// Handle map types specially
+	if strings.HasPrefix(inside, "map[") {
+		inside = "Map"
+	} else if inside == "interface {}" || inside == "interface{}" {
+		inside = "Any"
+	} else {
+		// Extract the package.TypeName portion after the last /
+		lastSlash := strings.LastIndex(inside, "/")
+		if lastSlash != -1 {
+			inside = inside[lastSlash+1:]
+		}
 
-	// Extract just the type name after the package (after the last .)
-	lastDot := strings.LastIndex(inside, ".")
-	if lastDot != -1 {
-		inside = inside[lastDot+1:]
+		// Extract just the type name after the package (after the last .)
+		lastDot := strings.LastIndex(inside, ".")
+		if lastDot != -1 {
+			inside = inside[lastDot+1:]
+		}
+
+		// Strip any remaining brackets from nested generics (e.g., "Type]" -> "Type")
+		inside = strings.TrimRight(inside, "[]")
 	}
 
 	// Add List suffix for slice types

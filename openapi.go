@@ -562,13 +562,15 @@ type OpenAPIDescriptioner interface {
 // Transform the type name to a more readable & valid OpenAPI 3 format.
 // Useful for generics.
 // Example: "BareSuccessResponse[github.com/go-fuego/fuego/examples/petstore/models.Pets]" -> "BareSuccessResponse_models.Pets"
+// Example: "ResultData[[]dtos.StripePaymentMethod]" -> "ResultData_StripePaymentMethodList"
+// Example: "ResultData[*dtos.StripePaymentMethod]" -> "ResultData_StripePaymentMethod"
 func transformTypeName(s string) string {
 	// Find the positions of the '[' and ']'
 	start := strings.Index(s, "[")
 	if start == -1 {
 		return s
 	}
-	end := strings.Index(s, "]")
+	end := strings.LastIndex(s, "]")
 	if end == -1 {
 		return s
 	}
@@ -577,9 +579,31 @@ func transformTypeName(s string) string {
 
 	inside := s[start+1 : end]
 
+	// Handle slice types - strip leading [] and add "List" suffix later
+	isSlice := false
+	if strings.HasPrefix(inside, "[]") {
+		isSlice = true
+		inside = strings.TrimPrefix(inside, "[]")
+	}
+
+	// Handle pointer types - strip leading *
+	inside = strings.TrimPrefix(inside, "*")
+
+	// Extract the package.TypeName portion after the last /
 	lastSlash := strings.LastIndex(inside, "/")
 	if lastSlash != -1 {
 		inside = inside[lastSlash+1:]
+	}
+
+	// Extract just the type name after the package (after the last .)
+	lastDot := strings.LastIndex(inside, ".")
+	if lastDot != -1 {
+		inside = inside[lastDot+1:]
+	}
+
+	// Add List suffix for slice types
+	if isSlice {
+		inside = inside + "List"
 	}
 
 	return prefix + "_" + inside

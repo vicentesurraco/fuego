@@ -477,6 +477,127 @@ func OptionRequestBody(requestBody RequestBody) RouteOption {
 	}
 }
 
+// FormField represents a field in a multipart/form-data request.
+type FormField struct {
+	// Name is the field name in the form
+	Name string
+	// Description is the OpenAPI description for this field
+	Description string
+	// Required marks the field as required
+	Required bool
+	// Type is the field type: "file" for file uploads, "string", "integer", "boolean", or "array"
+	Type string
+	// Items is used for array types to specify the item type (e.g., "file", "string")
+	Items string
+}
+
+// FormFieldFile creates a file upload field for multipart/form-data.
+// Example:
+//
+//	FormFieldFile("image", "The image file to upload", true)
+func FormFieldFile(name, description string, required bool) FormField {
+	return FormField{
+		Name:        name,
+		Description: description,
+		Required:    required,
+		Type:        "file",
+	}
+}
+
+// FormFieldString creates a string field for multipart/form-data.
+// Example:
+//
+//	FormFieldString("caption", "Image caption", false)
+func FormFieldString(name, description string, required bool) FormField {
+	return FormField{
+		Name:        name,
+		Description: description,
+		Required:    required,
+		Type:        "string",
+	}
+}
+
+// FormFieldFiles creates a multiple file upload field for multipart/form-data.
+// Example:
+//
+//	FormFieldFiles("images", "Multiple image files to upload", true)
+func FormFieldFiles(name, description string, required bool) FormField {
+	return FormField{
+		Name:        name,
+		Description: description,
+		Required:    required,
+		Type:        "array",
+		Items:       "file",
+	}
+}
+
+// OptionMultipartFormData documents a multipart/form-data request body with file upload fields.
+// This is useful for endpoints that accept file uploads via multipart/form-data.
+// Example:
+//
+//	fuegoecho.Post(engine, group, "/upload", handler,
+//	    fuego.OptionMultipartFormData(
+//	        fuego.FormFieldFile("image", "The image file to upload", true),
+//	        fuego.FormFieldString("caption", "Optional caption", false),
+//	    ),
+//	)
+func OptionMultipartFormData(fields ...FormField) RouteOption {
+	return func(r *BaseRoute) {
+		schema := openapi3.NewSchema()
+		schema.Type = &openapi3.Types{openapi3.TypeObject}
+		schema.Properties = make(openapi3.Schemas)
+
+		var requiredFields []string
+
+		for _, field := range fields {
+			propSchema := openapi3.NewSchema()
+			propSchema.Description = field.Description
+
+			switch field.Type {
+			case "file":
+				propSchema.Type = &openapi3.Types{openapi3.TypeString}
+				propSchema.Format = "binary"
+			case "array":
+				propSchema.Type = &openapi3.Types{openapi3.TypeArray}
+				itemSchema := openapi3.NewSchema()
+				if field.Items == "file" {
+					itemSchema.Type = &openapi3.Types{openapi3.TypeString}
+					itemSchema.Format = "binary"
+				} else {
+					itemSchema.Type = &openapi3.Types{openapi3.TypeString}
+				}
+				propSchema.Items = &openapi3.SchemaRef{Value: itemSchema}
+			case "integer":
+				propSchema.Type = &openapi3.Types{openapi3.TypeInteger}
+			case "boolean":
+				propSchema.Type = &openapi3.Types{openapi3.TypeBoolean}
+			default: // "string" or anything else
+				propSchema.Type = &openapi3.Types{openapi3.TypeString}
+			}
+
+			schema.Properties[field.Name] = &openapi3.SchemaRef{Value: propSchema}
+
+			if field.Required {
+				requiredFields = append(requiredFields, field.Name)
+			}
+		}
+
+		schema.Required = requiredFields
+
+		requestBody := openapi3.NewRequestBody().
+			WithRequired(len(requiredFields) > 0).
+			WithDescription("Multipart form data").
+			WithContent(openapi3.NewContentWithSchemaRef(
+				&openapi3.SchemaRef{Value: schema},
+				[]string{"multipart/form-data"},
+			))
+
+		r.Operation.RequestBody = &openapi3.RequestBodyRef{
+			Value: requestBody,
+		}
+	}
+}
+
 // OptionDefaultResponse adds a default response to a route
 // Required: Response.Type must be set
 // Optional: Response.ContentTypes will default to `application/json` and `application/xml` if not set

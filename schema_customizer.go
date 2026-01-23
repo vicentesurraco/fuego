@@ -184,7 +184,16 @@ func parseEnum(tag reflect.StructTag, schema *openapi3.Schema) {
 //
 // Additionally, if a type implements EnumValuer, its EnumValues() method will be called
 // to automatically populate the enum values in the schema.
+//
+// Special type handling:
+// - github.com/google/uuid.UUID => type: string, format: uuid
 func SchemaCustomizer(name string, t reflect.Type, tag reflect.StructTag, schema *openapi3.Schema) error {
+	// Handle uuid.UUID type from github.com/google/uuid
+	if t.PkgPath() == "github.com/google/uuid" && t.Name() == "UUID" {
+		schema.Type = &openapi3.Types{openapi3.TypeString}
+		schema.Format = "uuid"
+	}
+
 	// Example
 	parseExample(tag, schema)
 

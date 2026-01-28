@@ -116,9 +116,10 @@ func (c echoContext[B, P]) HasCookie(name string) bool {
 	return err == nil
 }
 
+// HasHeader checks if the request has the given header.
+// Uses Header.Get() for case-insensitive lookup per HTTP spec.
 func (c echoContext[B, P]) HasHeader(key string) bool {
-	_, ok := c.echoCtx.Request().Header[key]
-	return ok
+	return c.Header(key) != ""
 }
 
 func (c echoContext[B, P]) SetHeader(key, value string) {

@@ -653,24 +653,30 @@ func enumSignature(values []any) string {
 // extractEnumSchemas finds inline enum definitions and extracts them to component schemas
 func (openAPI *OpenAPI) extractEnumSchemas() {
 	desc := openAPI.Description()
+	visited := make(map[*openapi3.Schema]bool)
 
 	// Process all component schemas to find inline enums in properties
 	for _, schemaRef := range desc.Components.Schemas {
 		if schemaRef.Value == nil || schemaRef.Value.Properties == nil {
 			continue
 		}
-		openAPI.processPropertiesForEnums(schemaRef.Value.Properties)
+		openAPI.processPropertiesForEnums(schemaRef.Value.Properties, visited)
 	}
 }
 
 // processPropertiesForEnums recursively processes schema properties to extract enums
-func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi3.SchemaRef) {
+func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi3.SchemaRef, visited map[*openapi3.Schema]bool) {
 	for propName, propRef := range properties {
 		if propRef.Value == nil {
 			continue
 		}
 
 		prop := propRef.Value
+
+		if visited[prop] {
+			continue
+		}
+		visited[prop] = true
 
 		// If property has enum values and we have a registered type for it
 		if len(prop.Enum) > 0 {
@@ -689,13 +695,13 @@ func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi
 
 		// Recursively process nested properties
 		if prop.Properties != nil {
-			openAPI.processPropertiesForEnums(prop.Properties)
+			openAPI.processPropertiesForEnums(prop.Properties, visited)
 		}
 
 		// Process array items
 		if prop.Items != nil && prop.Items.Value != nil {
 			if prop.Items.Value.Properties != nil {
-				openAPI.processPropertiesForEnums(prop.Items.Value.Properties)
+				openAPI.processPropertiesForEnums(prop.Items.Value.Properties, visited)
 			}
 			// Check if array items are enums
 			if len(prop.Items.Value.Enum) > 0 {
@@ -712,17 +718,17 @@ func (openAPI *OpenAPI) processPropertiesForEnums(properties map[string]*openapi
 		// Process allOf, oneOf, anyOf
 		for _, subSchema := range prop.AllOf {
 			if subSchema.Value != nil && subSchema.Value.Properties != nil {
-				openAPI.processPropertiesForEnums(subSchema.Value.Properties)
+				openAPI.processPropertiesForEnums(subSchema.Value.Properties, visited)
 			}
 		}
 		for _, subSchema := range prop.OneOf {
 			if subSchema.Value != nil && subSchema.Value.Properties != nil {
-				openAPI.processPropertiesForEnums(subSchema.Value.Properties)
+				openAPI.processPropertiesForEnums(subSchema.Value.Properties, visited)
 			}
 		}
 		for _, subSchema := range prop.AnyOf {
 			if subSchema.Value != nil && subSchema.Value.Properties != nil {
-				openAPI.processPropertiesForEnums(subSchema.Value.Properties)
+				openAPI.processPropertiesForEnums(subSchema.Value.Properties, visited)
 			}
 		}
 	}

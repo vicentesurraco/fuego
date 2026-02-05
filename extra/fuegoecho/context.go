@@ -25,11 +25,7 @@ var (
 func (c echoContext[B, P]) Body() (B, error) {
 	var body B
 	err := c.echoCtx.Bind(&body)
-	if err != nil {
-		return body, err
-	}
-
-	return fuego.TransformAndValidate(c, body)
+	return body, err
 }
 
 func (c echoContext[B, P]) Context() context.Context {

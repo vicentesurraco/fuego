@@ -2,8 +2,10 @@ package fuegoecho
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/labstack/echo/v4"
@@ -131,8 +133,15 @@ func (c echoContext[B, P]) Serialize(data any) error {
 	if status == 0 {
 		status = http.StatusOK
 	}
-	c.echoCtx.JSON(status, data)
-	return nil
+	b, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+	c.echoCtx.Response().Header().Set("Content-Type", "application/json")
+	c.echoCtx.Response().Header().Set("Content-Length", strconv.Itoa(len(b)))
+	c.echoCtx.Response().WriteHeader(status)
+	_, err = c.echoCtx.Response().Write(b)
+	return err
 }
 
 func (c echoContext[B, P]) SerializeError(err error) {
@@ -141,7 +150,15 @@ func (c echoContext[B, P]) SerializeError(err error) {
 	if errors.As(err, &errorWithStatusCode) {
 		statusCode = errorWithStatusCode.StatusCode()
 	}
-	c.echoCtx.JSON(statusCode, err)
+	b, jsonErr := json.Marshal(err)
+	if jsonErr != nil {
+		http.Error(c.echoCtx.Response(), err.Error(), statusCode)
+		return
+	}
+	c.echoCtx.Response().Header().Set("Content-Type", "application/json")
+	c.echoCtx.Response().Header().Set("Content-Length", strconv.Itoa(len(b)))
+	c.echoCtx.Response().WriteHeader(statusCode)
+	c.echoCtx.Response().Write(b)
 }
 
 func (c echoContext[B, P]) SetDefaultStatusCode() {
